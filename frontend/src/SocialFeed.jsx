@@ -641,10 +641,13 @@ export default function SocialFeed() {
 
       try {
 
-        const response =
-          await fetch(
-            `${API_BASE}/complaints/`
-          );
+        const response = await fetch(
+          `${API_BASE}/complaints/`,
+          {
+            credentials: "include",
+            cache: "no-store",
+          }
+        );
 
         if (!response.ok) {
           throw new Error(
@@ -696,6 +699,7 @@ export default function SocialFeed() {
           await fetch(
             `${API_BASE}/social-posts/`,
             {
+              credentials: "include",
               cache: "no-store",
             }
           );
