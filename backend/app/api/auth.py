@@ -235,6 +235,7 @@ COOKIE_SECURE = os.environ.get(
     "JAN_DRISHTI_COOKIE_SECURE",
     "false"
 ).lower() == "true"
+COOKIE_SAMESITE = os.environ.get("JAN_DRISHTI_COOKIE_SAMESITE", "lax").lower()
 
 
 class LoginRequest(BaseModel):
@@ -454,7 +455,7 @@ def login_user(
         value=sign_session(user.id),
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         max_age=SESSION_LIFETIME,
         path="/",
     )
@@ -513,7 +514,7 @@ def logout_user(
     response.delete_cookie(
         COOKIE_NAME,
         path="/",
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         secure=COOKIE_SECURE,
         httponly=True,
     )
