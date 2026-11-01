@@ -677,7 +677,7 @@ function App() {
       };
 
       const complaintResponse = await fetch(
-        `${API_URL}/complaints?direct_authorization=${encodeURIComponent(
+        `${API_URL}/complaints/?direct_authorization=${encodeURIComponent(
           form.direct_authorization
         )}`,
         {
