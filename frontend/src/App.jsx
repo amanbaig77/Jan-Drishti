@@ -696,9 +696,11 @@ function App() {
         await complaintResponse.json();
 
       if (complaintResponse.status === 401) {
-        window.location.assign("/login?next=%2Freport");
-        return;
-      }
+  throw new Error(
+    complaintResult.detail ||
+    "Complaint API returned 401 Unauthorized."
+  );
+}
 
       if (!complaintResponse.ok) {
         throw new Error(
