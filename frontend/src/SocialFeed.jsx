@@ -66,6 +66,13 @@ const iconPaths = {
     <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" />
   ),
 
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+
   message: (
     <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a9 9 0 1 1 16.1-4Z" />
   ),
@@ -598,6 +605,9 @@ export default function SocialFeed() {
     setLikes,
   ] = useState({});
 
+  const [likedByMe, setLikedByMe] = useState({});
+  const [views, setViews] = useState({});
+
   const [
     reposts,
     setReposts,
@@ -713,11 +723,12 @@ export default function SocialFeed() {
         const result =
           await response.json();
 
-        setSocialPosts(
-          Array.isArray(result)
-            ? result
-            : []
-        );
+        const posts = Array.isArray(result) ? result : [];
+        setSocialPosts(posts);
+        setLikes((prev) => ({ ...prev, ...Object.fromEntries(posts.map((p) => [`community-${p.id}`, p.like_count || 0])) }));
+        setLikedByMe((prev) => ({ ...prev, ...Object.fromEntries(posts.map((p) => [`community-${p.id}`, Boolean(p.liked_by_me)])) }));
+        setComments((prev) => ({ ...prev, ...Object.fromEntries(posts.map((p) => [`community-${p.id}`, p.comments || []])) }));
+        setViews((prev) => ({ ...prev, ...Object.fromEntries(posts.map((p) => [`community-${p.id}`, p.view_count || 0])) }));
 
       } catch (err) {
 
@@ -1483,50 +1494,59 @@ export default function SocialFeed() {
 
 
   // =========================================================
-  // COMMENTS
+  // SOCIAL INTERACTIONS
   // =========================================================
-
-  const addComment = (
-    key
-  ) => {
-
-    const message =
-      (
-        drafts[key] || ""
-      ).trim();
-
-    if (!message) {
-      return;
-    }
-
-
-    setComments(
-      (previous) => ({
-        ...previous,
-
-        [key]: [
-          ...(
-            previous[key] || []
-          ),
-
-          {
-            id:
-              `${key}-${Date.now()}`,
-
-            text: message,
-          },
-        ],
-      })
-    );
-
-
-    setDrafts(
-      (previous) => ({
-        ...previous,
-        [key]: "",
-      })
-    );
+  const toggleCommunityLike = async (postId, key) => {
+    if (!auth.user) return window.location.assign("/login?next=%2Fsocial");
+    const response = await fetch(`${API_BASE}/social-posts/${postId}/like`, { method: "POST", credentials: "include" });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) return window.location.assign("/login?next=%2Fsocial");
+    if (!response.ok) return setSocialError(result.detail || "Unable to update like.");
+    setLikes((prev) => ({ ...prev, [key]: result.like_count || 0 }));
+    setLikedByMe((prev) => ({ ...prev, [key]: Boolean(result.liked) }));
   };
+
+  const addComment = async (key, postId = null) => {
+    const message = (drafts[key] || "").trim();
+    if (!message) return;
+    if (!postId) {
+      setComments((prev) => ({ ...prev, [key]: [...(prev[key] || []), { id: `${key}-${Date.now()}`, text: message }] }));
+      return setDrafts((prev) => ({ ...prev, [key]: "" }));
+    }
+    if (!auth.user) return window.location.assign("/login?next=%2Fsocial");
+    const response = await fetch(`${API_BASE}/social-posts/${postId}/comments`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: message }) });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) return window.location.assign("/login?next=%2Fsocial");
+    if (!response.ok) return setSocialError(result.detail || "Unable to post comment.");
+    setComments((prev) => ({ ...prev, [key]: [...(prev[key] || []), result.comment] }));
+    setDrafts((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const recordCommunityView = async (postId, key) => {
+    const seenKey = `jd_viewed_post_${postId}`;
+    if (sessionStorage.getItem(seenKey)) return;
+    let viewerId = localStorage.getItem("jd_viewer_id");
+    if (!viewerId) { viewerId = `viewer-${Date.now()}-${Math.random().toString(36).slice(2)}`; localStorage.setItem("jd_viewer_id", viewerId); }
+    sessionStorage.setItem(seenKey, "1");
+    try {
+      const response = await fetch(`${API_BASE}/social-posts/${postId}/view`, { method: "POST", credentials: "include", headers: { "X-Jan-Drishti-Viewer": viewerId } });
+      const result = await response.json().catch(() => ({}));
+      if (response.ok) setViews((prev) => ({ ...prev, [key]: result.view_count || 0 }));
+    } catch (err) { console.error("View count error:", err); }
+  };
+
+  useEffect(() => {
+    if (!socialPosts.length || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+        const postId = Number(entry.target.dataset.communityPostId);
+        if (postId) recordCommunityView(postId, `community-${postId}`);
+        observer.unobserve(entry.target);
+      }
+    }), { threshold: 0.5 });
+    document.querySelectorAll("[data-community-post-id]").forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [socialPosts]);
 
 
   // =========================================================
@@ -2623,6 +2643,7 @@ export default function SocialFeed() {
                     className="jd-post"
                     key={key}
                     id={`community-post-${id}`}
+                    data-community-post-id={id}
                   >
 
                     <div className="jd-post-inner">
@@ -2834,27 +2855,8 @@ export default function SocialFeed() {
 
 
                           <button
-                            className={
-                              likes[key]
-                                ? "liked"
-                                : ""
-                            }
-                            onClick={() =>
-                              setLikes(
-                                (
-                                  previous
-                                ) => ({
-                                  ...previous,
-
-                                  [key]:
-                                    previous[
-                                      key
-                                    ]
-                                      ? 0
-                                      : 1,
-                                })
-                              )
-                            }
+                            className={likedByMe[key] ? "liked" : ""}
+                            onClick={() => toggleCommunityLike(id, key)}
                             aria-label="Like post"
                           >
                             <Icon
@@ -2867,6 +2869,12 @@ export default function SocialFeed() {
                                 key
                               ] || 0}
                             </span>
+                          </button>
+
+
+                          <button type="button" aria-label="Post views" title="Views">
+                            <Icon name="eye" size={18} />
+                            <span>{views[key] || 0}</span>
                           </button>
 
 
@@ -2926,9 +2934,7 @@ export default function SocialFeed() {
                                 ) =>
                                   event.key ===
                                     "Enter" &&
-                                  addComment(
-                                    key
-                                  )
+                                  addComment(key, id)
                                 }
                                 placeholder="Add a community comment..."
                               />
@@ -2936,9 +2942,7 @@ export default function SocialFeed() {
 
                               <button
                                 onClick={() =>
-                                  addComment(
-                                    key
-                                  )
+                                  addComment(key, id)
                                 }
                                 disabled={
                                   !drafts[
@@ -2975,11 +2979,9 @@ export default function SocialFeed() {
                                   <div>
 
                                     <strong>
-                                      Citizen
+                                      {comment.name || (comment.username ? `@${comment.username}` : "Citizen")}
                                       {" "}
-                                      <small>
-                                        · Local preview
-                                      </small>
+                                      <small>· {when(comment.created_at)}</small>
                                     </strong>
 
                                     <p>
